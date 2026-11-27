@@ -1212,3 +1212,14 @@ td {
     opacity: 0;
   }
 }
+
+/* Phone/PWA: respect notches, avoid 100vh jumps from the mobile URL bar. */
+@supports (height: 100dvh) {
+  .app-shell {
+    height: 100dvh;
+  }
+}
+
+.app-shell {
+  padding-bottom: env(safe-area-inset-bottom);
+}

@@ -158,14 +158,16 @@ export default function App() {
             >
               <PanelRight size={16} />
             </button>
-            <button
-              className="simple-button danger"
-              onClick={() => void switchMode("computer")}
-              aria-label="Computer use mode"
-              title="Computer use mode"
-            >
-              <MonitorCog size={16} />
-            </button>
+            {window.ricky.web ? null : (
+              <button
+                className="simple-button danger"
+                onClick={() => void switchMode("computer")}
+                aria-label="Computer use mode"
+                title="Computer use mode"
+              >
+                <MonitorCog size={16} />
+              </button>
+            )}
             <button
               className={artifactVisible ? "simple-button active" : "simple-button"}
               onClick={() => setArtifactVisible((value) => !value)}

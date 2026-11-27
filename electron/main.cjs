@@ -1,4 +1,7 @@
-const { app, BrowserWindow, ipcMain, nativeImage, screen } = require("electron");
+// Under Electron this is the desktop app. Under plain Node (server/web.cjs) the
+// same handlers back the browser/phone build, without desktop-only tools.
+const webMode = !process.versions.electron;
+const { app, BrowserWindow, ipcMain, nativeImage, screen } = webMode ? {} : require("electron");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const path = require("node:path");
@@ -361,6 +364,24 @@ const toolSpecs = [
   },
 ];
 
+const desktopOnlyTools = new Set([
+  "computer_open_app",
+  "computer_type_text",
+  "computer_press_key",
+  "computer_click",
+  "computer_scroll",
+  "screen_snapshot",
+  "ui_inspect",
+  "thumbnail_reference_add",
+]);
+const activeToolSpecs = webMode ? toolSpecs.filter((tool) => !desktopOnlyTools.has(tool.name)) : toolSpecs;
+
+const handlers = {};
+function handle(channel, fn) {
+  handlers[channel] = fn;
+  if (ipcMain) ipcMain.handle(channel, fn);
+}
+
 async function ensureData() {
   await fs.mkdir(dataDir, { recursive: true });
   try {
@@ -553,9 +574,9 @@ function setWindowMode(mode) {
   }
 }
 
-ipcMain.handle("tools:list", () => toolSpecs);
+handle("tools:list", () => activeToolSpecs);
 
-ipcMain.handle("realtime:create-token", async () => {
+handle("realtime:create-token", async () => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is missing in .env.local");
@@ -578,7 +599,7 @@ ipcMain.handle("realtime:create-token", async () => {
         output_modalities: ["audio"],
         reasoning: { effort: "low" },
         tool_choice: "auto",
-        tools: toolSpecs,
+        tools: activeToolSpecs,
         audio: {
           input: {
             turn_detection: {
@@ -612,13 +633,17 @@ ipcMain.handle("realtime:create-token", async () => {
   return { value, expiresAt: data.expires_at || data.client_secret?.expires_at || null };
 });
 
-ipcMain.handle("tools:execute", async (_event, toolCall) => {
+handle("tools:execute", async (_event, toolCall) => {
   const name = String(toolCall?.name || "");
   const args = asObject(toolCall?.arguments);
 
+  if (webMode && desktopOnlyTools.has(name)) {
+    return { ok: false, error: `${name} is only available in the desktop app.` };
+  }
+
   try {
     if (name === "set_mode") {
-      currentMode = args.mode === "computer" ? "computer" : "display";
+      currentMode = args.mode === "computer" && !webMode ? "computer" : "display";
       setWindowMode(currentMode);
       return {
         ok: true,
@@ -1541,14 +1566,18 @@ function fallbackMermaidDiagram(title) {
   return `flowchart TD\n  A["${safeTitle}"] --> B["Chart request received"]\n  B --> C["Ricky will show a safe fallback if syntax fails"]`;
 }
 
-app.whenReady().then(createWindow);
+if (app) {
+  app.whenReady().then(createWindow);
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
 
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    void createWindow();
-  }
-});
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      void createWindow();
+    }
+  });
+}
+
+module.exports = { handlers, ensureData, clearStartupLoadingThumbnails };
